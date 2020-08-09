@@ -7,7 +7,7 @@ from chainer import initializers, training, iterators, optimizers
 from chainer.training import extensions
 from chainer import Variable
 #import numpy as np
-import numpy as np
+import cupy as np
 import argparse
 
 class DialectClassifier(chainer.Chain):
@@ -17,18 +17,14 @@ class DialectClassifier(chainer.Chain):
         with self.init_scope():
             self.lstm = L.NStepLSTM(1,n_embed,n_lstm,dropout=0.2)
             self.categ = L.Linear(None,n_categ)
-    
-    def sequence_embed(self,embed, xs):
-        x_len = [len(x) for x in xs]
-        x_section = np.cumsum(x_len[:-1]).astype(np.int32).tolist()
-        ex = embed(F.concat(xs, axis=0))
-        exs = F.split_axis(ex, x_section, 0)
-        return list(exs)
 
-    def __call__(self,dialect):
+    def __call__(self,dialect,category):
         h2,_,_ = self.lstm(None,None,dialect)
         h3 = F.relu(h2[0])
-        return self.categ(h3)
+        h4 = self.categ(h3)
+        loss = F.sigmoid_cross_entropy(h4,category)
+        chainer.report({'loss':loss},self)
+        return loss
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -37,11 +33,12 @@ if __name__ == "__main__":
 
     BATCH_SIZE = 60
 
-    model = L.Classifier(DialectClassifier(
+    model = DialectClassifier(
         n_categ=55,
         n_embed=100,
         n_lstm=600,
-    ),label_key='category')
+    )
+    model.to_gpu()
 
     wd = WordAndCategDict()
 
@@ -66,21 +63,27 @@ if __name__ == "__main__":
     optimizer = optimizers.SGD()
     optimizer.setup(model)
 
+    def remove_nan(x):
+        if x.shape ==(0,):
+            return np.zeros((2,100),dtype=np.float32)
+        else:
+            return x
+
     def batch_converter(batch,device):
-        dialect = [np.array(b[0]) for b in batch]
+        dialect = [remove_nan(np.array(b[0],dtype=np.float32)) for b in batch]
         category = np.array([b[1] for b in batch],dtype=np.int32)
-        return {'dialect':dialect,'category':category}
+        return dialect,category
 
     updater = training.StandardUpdater(
         iter_train,
         optimizer,
         device=0,
         converter=batch_converter,
-        loss_func=F.sigmoid_cross_entropy
+        #loss_func=F.sigmoid_cross_entropy
     )
 
     trainer = training.Trainer(updater,(args.epoch,'epoch'),out='result')
-    trainer.extend(extensions.Evaluator(iter_test, model,device=0,converter=batch_converter))
+    trainer.extend(extensions.Evaluator(iter_test, model,device=0,converter=batch_converter))#,eval_func=F.sigmoid_cross_entropy))
     trainer.extend(extensions.LogReport())
     trainer.extend(extensions.PrintReport(['epoch', 'main/loss', 'main/accuracy',
                                                     'validation/main/loss', 'validation/main/accuracy', 'elapsed_time']))

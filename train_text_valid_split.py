@@ -1,7 +1,7 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from word_and_categ_dict import WordAndCategDict
-import numpy as np
+import cupy as np
 import argparse
 import fasttext
 import nltk
@@ -9,15 +9,15 @@ from nltk.corpus.util import LazyCorpusLoader
 from nltk.corpus.reader import *
 import re
 from nltk import word_tokenize
+from sklearn.preprocessing import MultiLabelBinarizer
 
 def to_index_and_save(data_s,data_c,wcdict,data_name,index,func=None):
     data_name += '.pkl'
     func = wcdict.stoi if func == None else func
 
     data_s_new = data_s.map(func)
-    data_c_new = data_c.map(wcdict.categ_list_to_i)
 
-    pd.concat([data_s_new,data_c_new],axis=1).to_pickle(data_name)
+    pd.concat([data_s_new,data_c],axis=1).to_pickle(data_name)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -41,8 +41,14 @@ if __name__ == "__main__":
     train_docs = [ma_reuters.raw(doc_id) for doc_id in train_docs_id]
     test_docs = [ma_reuters.raw(doc_id) for doc_id in test_docs_id]
 
+    '''
     train_docs_categ = [ma_reuters.categories(doc_id) for doc_id in train_docs_id]
     test_docs_categ = [ma_reuters.categories(doc_id) for doc_id in test_docs_id]
+    '''
+
+    mlb = MultiLabelBinarizer()
+    train_docs_categ = mlb.fit_transform([ma_reuters.categories(doc_id) for doc_id in train_docs_id])
+    test_docs_categ = mlb.transform([ma_reuters.categories(doc_id) for doc_id in test_docs_id])
     
     '''
     train_docs_categ = [np.array([wcdict.ctoi(c) for c in categ],dtype=np.int32) for categ in train_docs_categ]
@@ -75,17 +81,9 @@ if __name__ == "__main__":
         func)
 
     to_index_and_save(
-        train['SENTENCE'],
-        train['CATEG'],
+        test['SENTENCE'],
+        test['CATEG'],
         wcdict,
         'corpus/test',
-        index,
-        func)
-
-    to_index_and_save(
-        train['SENTENCE'],
-        train['CATEG'],
-        wcdict,
-        'corpus/valid',
         index,
         func)
