@@ -1,0 +1,7 @@
+__pycache__/
+.vscode/
+.DS_Store
+*.zip
+fasttext_model/
+corpus/
+kadai2_env/
