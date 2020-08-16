@@ -5,3 +5,5 @@ __pycache__/
 fasttext_model/
 corpus/
 kadai2_env/
+ma_reuters/
+result/
